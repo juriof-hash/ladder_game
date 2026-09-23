@@ -17,7 +17,9 @@ export interface LadderResult {
 export interface LadderRung {
   id: string;
   col: number; // between col and col + 1
-  yRatio: number; // 0 to 1 relative height
+  yRatio: number; // 0 to 1 relative height on left column (col)
+  y2Ratio?: number; // 0 to 1 relative height on right column (col + 1). Defaults to yRatio if horizontal
+  isDiagonal?: boolean;
 }
 
 export interface Point {

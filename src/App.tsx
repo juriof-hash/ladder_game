@@ -166,24 +166,33 @@ export default function App() {
   );
 
   // Toggle rung on ladder (click to add/remove)
-  const handleToggleRung = useCallback((col: number, yRatio: number) => {
+  const handleToggleRung = useCallback((col: number, yRatio: number, y2Ratio?: number) => {
     setRungs((prev) => {
-      // Check if existing rung near here (within 0.05 height)
-      const existingIdx = prev.findIndex(
-        (r) => r.col === col && Math.abs(r.yRatio - yRatio) < 0.05
-      );
+      // Check if existing rung near here
+      const existingIdx = prev.findIndex((r) => {
+        if (r.col !== col) return false;
+        const leftDist = Math.abs(r.yRatio - yRatio);
+        const rightDist = r.y2Ratio !== undefined ? Math.abs(r.y2Ratio - yRatio) : leftDist;
+        return leftDist < 0.05 || rightDist < 0.05;
+      });
 
       if (existingIdx !== -1) {
         // Remove it
         return prev.filter((_, idx) => idx !== existingIdx);
       } else {
         // Add new rung
+        const finalY2 = y2Ratio ?? yRatio;
+        const isDiagonal = Math.abs(yRatio - finalY2) > 0.005;
         const newRung: LadderRung = {
           id: `rung-${col}-${Date.now()}`,
           col,
           yRatio,
+          y2Ratio: finalY2,
+          isDiagonal,
         };
-        return [...prev, newRung].sort((a, b) => a.yRatio - b.yRatio);
+        return [...prev, newRung].sort(
+          (a, b) => Math.min(a.yRatio, a.y2Ratio ?? a.yRatio) - Math.min(b.yRatio, b.y2Ratio ?? b.yRatio)
+        );
       }
     });
 
@@ -408,6 +417,7 @@ export default function App() {
           players={players}
           results={results}
           rungs={rungs}
+          density={density}
           speed={speed}
           onUpdatePlayerName={handleUpdatePlayerName}
           onUpdateResultText={handleUpdateResultText}

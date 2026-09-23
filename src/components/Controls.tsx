@@ -92,7 +92,7 @@ export const Controls: React.FC<ControlsProps> = ({
         <div className="flex items-center gap-3 sm:gap-4 flex-wrap justify-center lg:justify-end">
           {/* 사다리 밀도 */}
           <div className="flex items-center gap-1.5">
-            <span className="text-xs font-semibold text-slate-600">선 개수</span>
+            <span className="text-xs font-semibold text-slate-600">선 개수 / 복잡도</span>
             <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
               {(['simple', 'normal', 'complex'] as LadderDensity[]).map((d) => (
                 <button
@@ -102,16 +102,35 @@ export const Controls: React.FC<ControlsProps> = ({
                     onSetDensity(d);
                   }}
                   disabled={isAnyTraveling}
-                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
+                  title={
+                    d === 'simple'
+                      ? '기본 수평선 위주의 단순한 사다리'
+                      : d === 'normal'
+                      ? '적당한 수평선 배치의 표준 사다리'
+                      : '사선(대각선) 및 X자 교차선이 포함된 고난이도 사다리'
+                  }
+                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1 ${
                     density === d
                       ? 'bg-white text-slate-900 shadow-xs font-bold'
                       : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
-                  {d === 'simple' ? '단순' : d === 'normal' ? '보통' : '복잡'}
+                  <span>{d === 'simple' ? '단순' : d === 'normal' ? '보통' : '복잡'}</span>
+                  {d === 'complex' && (
+                    <span className={`text-[10px] px-1 py-0.2 rounded font-bold ${
+                      density === 'complex' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-400'
+                    }`}>
+                      사선
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
+            {density === 'complex' && (
+              <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full hidden sm:inline-flex items-center gap-1 shadow-2xs animate-pulse">
+                <span>📐 사선·X자 사다리 활성화</span>
+              </span>
+            )}
           </div>
 
           {/* 진행 속도 */}

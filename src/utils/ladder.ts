@@ -1,12 +1,9 @@
 import { LadderRung, Point, LadderPath, LadderDensity } from '../types';
 
 /**
- * Generates random horizontal rungs for N columns.
- * Amidakuji standard rules:
- * - A rung connects column c and c+1 at relative height yRatio (between 0.08 and 0.92).
- * - On the same column c, rungs must maintain a minimum vertical gap.
- * - At any column c, a left bridge (c-1, c) and a right bridge (c, c+1) should not be at the exact same y,
- *   to avoid ambiguous choices.
+ * Generates random rungs for N columns.
+ * In 'complex' mode, includes diagonal (slanted ↘, ↙) and X-crossing rungs!
+ * In 'simple' and 'normal' modes, generates clean horizontal bridges.
  */
 export function generateLadderRungs(
   columnCount: number,
@@ -16,52 +13,191 @@ export function generateLadderRungs(
   if (columnCount < 2) return rungs;
 
   const gapsCount = columnCount - 1;
-  // Determine target rungs per gap
-  const rungsPerGap = density === 'simple' ? 2 : density === 'normal' ? 3.5 : 5;
-  const totalRungsTarget = Math.round(gapsCount * rungsPerGap);
+  const isComplex = density === 'complex';
 
-  // Divide the vertical space (0.08 to 0.92) into discrete slots to ensure well-spaced bridges
-  const numSlots = Math.max(8, Math.round(rungsPerGap * 3.5));
+  // Number of slots for discrete vertical spacing
+  const numSlots = isComplex ? 20 : density === 'normal' ? 14 : 9;
   const slotHeight = (0.92 - 0.08) / numSlots;
 
-  // Track used slot heights per column to prevent collisions
-  // columnOccupation[c] stores slot indices used on column c (either left or right)
+  // Track occupied slots for each column: colOccupied[col] = Set of slot indices
   const colOccupied = Array.from({ length: columnCount }, () => new Set<number>());
 
-  // Guarantee at least 1 or 2 bridges per column gap so no player just drops straight without crossing
+  const getSlotY = (slot: number, jitterAmount = 0.25) => {
+    const jitter = (Math.random() - 0.5) * jitterAmount;
+    return Math.min(0.92, Math.max(0.08, 0.08 + (slot + 0.5 + jitter) * slotHeight));
+  };
+
+  // 1. Guaranteed connections for each gap
   for (let gap = 0; gap < gapsCount; gap++) {
-    const minGuaranteed = density === 'simple' ? 1 : 2;
-    const availableSlots = Array.from({ length: numSlots }, (_, i) => i).filter(
-      slot => !colOccupied[gap].has(slot) && !colOccupied[gap + 1].has(slot)
-    );
+    const minGuaranteed = density === 'simple' ? 1 : isComplex ? 3 : 2;
+    let placed = 0;
+    let attempts = 0;
 
-    // Shuffle and pick
-    availableSlots.sort(() => Math.random() - 0.5);
-    const pickCount = Math.min(minGuaranteed, availableSlots.length);
-    for (let i = 0; i < pickCount; i++) {
-      const slot = availableSlots[i];
-      colOccupied[gap].add(slot);
-      colOccupied[gap + 1].add(slot);
+    while (placed < minGuaranteed && attempts < 40) {
+      attempts++;
+      const slot = Math.floor(Math.random() * (numSlots - 2)) + 1;
 
-      // Add a slight jitter within slot
-      const jitter = (Math.random() - 0.5) * 0.4;
-      const yRatio = 0.08 + (slot + 0.5 + jitter) * slotHeight;
-      rungs.push({
-        id: `rung-${gap}-${slot}-${Math.random().toString(36).substring(2, 6)}`,
-        col: gap,
-        yRatio: Math.min(0.92, Math.max(0.08, yRatio)),
-      });
+      // In complex mode, 40% chance to try a diagonal or X-cross if space allows
+      const tryDiagonal = isComplex && Math.random() < 0.45;
+
+      if (tryDiagonal && slot + 1 < numSlots) {
+        // Option A: Down-Right Slant (↘)
+        const canDownRight =
+          !colOccupied[gap].has(slot) &&
+          !colOccupied[gap].has(slot - 1) &&
+          !colOccupied[gap + 1].has(slot + 1) &&
+          !colOccupied[gap + 1].has(slot + 2);
+
+        // Option B: Down-Left Slant (↙)
+        const canDownLeft =
+          !colOccupied[gap].has(slot + 1) &&
+          !colOccupied[gap].has(slot + 2) &&
+          !colOccupied[gap + 1].has(slot) &&
+          !colOccupied[gap + 1].has(slot - 1);
+
+        // Option C: X-Cross (✕)
+        const canXCross =
+          !colOccupied[gap].has(slot) &&
+          !colOccupied[gap].has(slot + 1) &&
+          !colOccupied[gap + 1].has(slot) &&
+          !colOccupied[gap + 1].has(slot + 1);
+
+        const subChoice = Math.random();
+
+        if (subChoice < 0.35 && canXCross) {
+          // Place X-cross
+          colOccupied[gap].add(slot);
+          colOccupied[gap].add(slot + 1);
+          colOccupied[gap + 1].add(slot);
+          colOccupied[gap + 1].add(slot + 1);
+
+          const yTop = getSlotY(slot, 0.1);
+          const yBottom = getSlotY(slot + 1, 0.1);
+
+          rungs.push({
+            id: `rung-x1-${gap}-${slot}-${Math.random().toString(36).substring(2, 6)}`,
+            col: gap,
+            yRatio: yTop,
+            y2Ratio: yBottom,
+            isDiagonal: true,
+          });
+          rungs.push({
+            id: `rung-x2-${gap}-${slot}-${Math.random().toString(36).substring(2, 6)}`,
+            col: gap,
+            yRatio: yBottom,
+            y2Ratio: yTop,
+            isDiagonal: true,
+          });
+          placed += 2;
+          continue;
+        } else if (subChoice < 0.7 && canDownRight) {
+          // Place Down-Right Slant
+          colOccupied[gap].add(slot);
+          colOccupied[gap + 1].add(slot + 1);
+
+          rungs.push({
+            id: `rung-dr-${gap}-${slot}-${Math.random().toString(36).substring(2, 6)}`,
+            col: gap,
+            yRatio: getSlotY(slot),
+            y2Ratio: getSlotY(slot + 1),
+            isDiagonal: true,
+          });
+          placed++;
+          continue;
+        } else if (canDownLeft) {
+          // Place Down-Left Slant
+          colOccupied[gap].add(slot + 1);
+          colOccupied[gap + 1].add(slot);
+
+          rungs.push({
+            id: `rung-dl-${gap}-${slot}-${Math.random().toString(36).substring(2, 6)}`,
+            col: gap,
+            yRatio: getSlotY(slot + 1),
+            y2Ratio: getSlotY(slot),
+            isDiagonal: true,
+          });
+          placed++;
+          continue;
+        }
+      }
+
+      // Standard Horizontal Rung
+      if (
+        !colOccupied[gap].has(slot) &&
+        !colOccupied[gap + 1].has(slot) &&
+        !colOccupied[gap].has(slot - 1) &&
+        !colOccupied[gap + 1].has(slot - 1)
+      ) {
+        colOccupied[gap].add(slot);
+        colOccupied[gap + 1].add(slot);
+
+        const y = getSlotY(slot);
+        rungs.push({
+          id: `rung-h-${gap}-${slot}-${Math.random().toString(36).substring(2, 6)}`,
+          col: gap,
+          yRatio: y,
+          y2Ratio: y,
+          isDiagonal: false,
+        });
+        placed++;
+      }
     }
   }
 
-  // Add additional random rungs up to target
-  let attempts = 0;
-  while (rungs.length < totalRungsTarget && attempts < 150) {
-    attempts++;
-    const gap = Math.floor(Math.random() * gapsCount);
-    const slot = Math.floor(Math.random() * numSlots);
+  // 2. Add extra rungs up to target
+  const rungsPerGap = density === 'simple' ? 2 : density === 'normal' ? 3.5 : 5.2;
+  const targetCount = Math.round(gapsCount * rungsPerGap);
 
-    // Ensure not adjacent collision
+  let extraAttempts = 0;
+  while (rungs.length < targetCount && extraAttempts < 150) {
+    extraAttempts++;
+    const gap = Math.floor(Math.random() * gapsCount);
+    const slot = Math.floor(Math.random() * (numSlots - 2)) + 1;
+
+    // Diagonal chance in complex mode
+    if (isComplex && Math.random() < 0.45 && slot + 1 < numSlots) {
+      if (Math.random() < 0.5) {
+        // Down-Right
+        if (
+          !colOccupied[gap].has(slot) &&
+          !colOccupied[gap].has(slot - 1) &&
+          !colOccupied[gap + 1].has(slot + 1) &&
+          !colOccupied[gap + 1].has(slot + 2)
+        ) {
+          colOccupied[gap].add(slot);
+          colOccupied[gap + 1].add(slot + 1);
+          rungs.push({
+            id: `rung-dr-${gap}-${slot}-${Math.random().toString(36).substring(2, 6)}`,
+            col: gap,
+            yRatio: getSlotY(slot),
+            y2Ratio: getSlotY(slot + 1),
+            isDiagonal: true,
+          });
+          continue;
+        }
+      } else {
+        // Down-Left
+        if (
+          !colOccupied[gap].has(slot + 1) &&
+          !colOccupied[gap].has(slot + 2) &&
+          !colOccupied[gap + 1].has(slot) &&
+          !colOccupied[gap + 1].has(slot - 1)
+        ) {
+          colOccupied[gap].add(slot + 1);
+          colOccupied[gap + 1].add(slot);
+          rungs.push({
+            id: `rung-dl-${gap}-${slot}-${Math.random().toString(36).substring(2, 6)}`,
+            col: gap,
+            yRatio: getSlotY(slot + 1),
+            y2Ratio: getSlotY(slot),
+            isDiagonal: true,
+          });
+          continue;
+        }
+      }
+    }
+
+    // Standard horizontal
     if (
       !colOccupied[gap].has(slot) &&
       !colOccupied[gap + 1].has(slot) &&
@@ -70,25 +206,25 @@ export function generateLadderRungs(
     ) {
       colOccupied[gap].add(slot);
       colOccupied[gap + 1].add(slot);
-
-      const jitter = (Math.random() - 0.5) * 0.4;
-      const yRatio = 0.08 + (slot + 0.5 + jitter) * slotHeight;
+      const y = getSlotY(slot);
       rungs.push({
-        id: `rung-${gap}-${slot}-${Math.random().toString(36).substring(2, 6)}`,
+        id: `rung-h-${gap}-${slot}-${Math.random().toString(36).substring(2, 6)}`,
         col: gap,
-        yRatio: Math.min(0.92, Math.max(0.08, yRatio)),
+        yRatio: y,
+        y2Ratio: y,
+        isDiagonal: false,
       });
     }
   }
 
-  // Sort rungs by yRatio ascending
-  rungs.sort((a, b) => a.yRatio - b.yRatio);
+  // Sort rungs by top-most height for predictable processing
+  rungs.sort((a, b) => Math.min(a.yRatio, a.y2Ratio ?? a.yRatio) - Math.min(b.yRatio, b.y2Ratio ?? b.yRatio));
   return rungs;
 }
 
 /**
- * Calculates the exact discrete traversal path for a player starting at column `startCol`.
- * Returns waypoints where the player moves down and across bridges.
+ * Calculates the exact traversal path for a player starting at column `startCol`.
+ * Works seamlessly for both horizontal and diagonal/slanted rungs.
  */
 export function calculatePlayerPath(
   startCol: number,
@@ -106,40 +242,81 @@ export function calculatePlayerPath(
   const getY = (yRatio: number) => paddingY + yRatio * usableHeight;
 
   let currentCol = startCol;
-  let currentYRatio = 0;
+  let currentY = 0; // Current height ratio on currentCol
 
   const points: Point[] = [
-    { x: getX(currentCol), y: getY(0) } // Start at top of column
+    { x: getX(currentCol), y: getY(0) }, // Start at top of column
   ];
 
-  // Sort rungs from top to bottom
-  const sortedRungs = [...rungs].sort((a, b) => a.yRatio - b.yRatio);
+  const visitedRungs = new Set<string>();
+  let steps = 0;
+  const maxSteps = 250; // Safety guard against unexpected loops
 
-  for (const rung of sortedRungs) {
-    if (rung.yRatio <= currentYRatio) continue;
+  while (steps < maxSteps) {
+    steps++;
 
-    // Does this rung connect to our current column?
-    // Case 1: Rung goes from currentCol to currentCol + 1
-    if (rung.col === currentCol) {
-      // Move straight down to rung height
-      points.push({ x: getX(currentCol), y: getY(rung.yRatio) });
-      // Move horizontally right
-      currentCol = currentCol + 1;
-      points.push({ x: getX(currentCol), y: getY(rung.yRatio) });
-      currentYRatio = rung.yRatio;
+    // Find all unvisited rungs touching currentCol with contact height > currentY + epsilon
+    interface ContactCandidate {
+      rung: LadderRung;
+      contactY: number;
+      destCol: number;
+      destY: number;
     }
-    // Case 2: Rung goes from currentCol - 1 to currentCol
-    else if (rung.col === currentCol - 1) {
-      // Move straight down to rung height
-      points.push({ x: getX(currentCol), y: getY(rung.yRatio) });
-      // Move horizontally left
-      currentCol = currentCol - 1;
-      points.push({ x: getX(currentCol), y: getY(rung.yRatio) });
-      currentYRatio = rung.yRatio;
+
+    const candidates: ContactCandidate[] = [];
+
+    for (const rung of rungs) {
+      if (visitedRungs.has(rung.id)) continue;
+
+      const yLeft = rung.yRatio;
+      const yRight = rung.y2Ratio ?? rung.yRatio;
+
+      // Case 1: Rung is to the right of currentCol (between currentCol and currentCol + 1)
+      if (rung.col === currentCol) {
+        if (yLeft > currentY + 0.001) {
+          candidates.push({
+            rung,
+            contactY: yLeft,
+            destCol: currentCol + 1,
+            destY: yRight,
+          });
+        }
+      }
+      // Case 2: Rung is to the left of currentCol (between currentCol - 1 and currentCol)
+      else if (rung.col === currentCol - 1) {
+        if (yRight > currentY + 0.001) {
+          candidates.push({
+            rung,
+            contactY: yRight,
+            destCol: currentCol - 1,
+            destY: yLeft,
+          });
+        }
+      }
     }
+
+    // If no more rungs on this column below currentY, move straight to the bottom
+    if (candidates.length === 0) {
+      break;
+    }
+
+    // Pick the earliest contact point along the current column (smallest contactY)
+    candidates.sort((a, b) => a.contactY - b.contactY);
+    const chosen = candidates[0];
+
+    // 1. Walk straight down currentCol to the contact junction
+    points.push({ x: getX(currentCol), y: getY(chosen.contactY) });
+
+    // 2. Cross the bridge (horizontal or diagonal) to destination
+    points.push({ x: getX(chosen.destCol), y: getY(chosen.destY) });
+
+    // 3. Mark rung visited and update runner location
+    visitedRungs.add(chosen.rung.id);
+    currentCol = chosen.destCol;
+    currentY = chosen.destY;
   }
 
-  // Finally, move straight down to bottom (yRatio = 1)
+  // Finally, move straight down from current position to the bottom of the column (y = 1)
   points.push({ x: getX(currentCol), y: getY(1) });
 
   return {
@@ -150,24 +327,13 @@ export function calculatePlayerPath(
 }
 
 /**
- * Solves all end columns for all players at once.
+ * Solves all end columns for all players at once using exact path resolution.
  */
 export function solveAllEndColumns(columnCount: number, rungs: LadderRung[]): number[] {
-  const sortedRungs = [...rungs].sort((a, b) => a.yRatio - b.yRatio);
-  const mapping: number[] = Array.from({ length: columnCount }, (_, i) => i);
-
-  for (const rung of sortedRungs) {
-    const c = rung.col;
-    // Swap the elements at column c and c + 1
-    const idxA = mapping.indexOf(c);
-    const idxB = mapping.indexOf(c + 1);
-    if (idxA !== -1 && idxB !== -1) {
-      mapping[idxA] = c + 1;
-      mapping[idxB] = c;
-    }
-  }
-
-  return mapping;
+  return Array.from({ length: columnCount }, (_, col) => {
+    const path = calculatePlayerPath(col, rungs, columnCount, 800, 500);
+    return path.endCol;
+  });
 }
 
 /**

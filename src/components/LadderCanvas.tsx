@@ -1,18 +1,19 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import confetti from 'canvas-confetti';
-import { Player, LadderResult, LadderRung, Point, SpeedMode } from '../types';
+import { Player, LadderResult, LadderRung, Point, SpeedMode, LadderDensity } from '../types';
 import { calculatePlayerPath, pointsToSvgPath } from '../utils/ladder';
 import { sound } from '../utils/audio';
-import { Play, Sparkles, Check, Edit2, GripHorizontal, Eye, EyeOff } from 'lucide-react';
+import { Play, Sparkles, Check, Edit2, GripHorizontal, Eye, EyeOff, Compass } from 'lucide-react';
 
 interface LadderCanvasProps {
   players: Player[];
   results: LadderResult[];
   rungs: LadderRung[];
+  density?: LadderDensity;
   speed: SpeedMode;
   onUpdatePlayerName: (id: string, newName: string) => void;
   onUpdateResultText: (id: string, newText: string) => void;
-  onToggleRung: (col: number, yRatio: number) => void;
+  onToggleRung: (col: number, yRatio: number, y2Ratio?: number) => void;
   onPlayerFinished: (playerId: string, resultIndex: number) => void;
   activePathPlayerId: string | null;
   setActivePathPlayerId: (id: string | null) => void;
@@ -44,6 +45,7 @@ export const LadderCanvas: React.FC<LadderCanvasProps> = ({
   players,
   results,
   rungs,
+  density,
   speed,
   onUpdatePlayerName,
   onUpdateResultText,
@@ -77,8 +79,13 @@ export const LadderCanvas: React.FC<LadderCanvasProps> = ({
   const animFrameIdRef = useRef<number | null>(null);
   const wasRunningRef = useRef(false);
 
-  // Hover state for interactive bridge addition
-  const [hoverRung, setHoverRung] = useState<{ col: number; yRatio: number } | null>(null);
+  // Hover state for interactive bridge addition (supports diagonal with Shift key)
+  const [hoverRung, setHoverRung] = useState<{
+    col: number;
+    yRatio: number;
+    y2Ratio: number;
+    isDiagonal: boolean;
+  } | null>(null);
 
   // Padding
   const padX = Math.max(50, Math.min(80, dimensions.width / (players.length * 1.5)));
@@ -392,15 +399,25 @@ export const LadderCanvas: React.FC<LadderCanvasProps> = ({
     if (nearestGap >= 0 && nearestGap < colCount - 1) {
       const yRatio = (clickY - padY) / (dimensions.height - padY * 2);
       if (yRatio >= 0.08 && yRatio <= 0.92) {
-        const isExisting = rungs.some(
-          r => r.col === nearestGap && Math.abs(r.yRatio - yRatio) < 0.05
+        const isExisting = rungs.find(
+          r => r.col === nearestGap && (
+            Math.abs(r.yRatio - yRatio) < 0.05 ||
+            (r.y2Ratio !== undefined && Math.abs(r.y2Ratio - yRatio) < 0.05)
+          )
         );
         if (isExisting) {
           sound.playRungRemove();
+          onToggleRung(nearestGap, isExisting.yRatio, isExisting.y2Ratio);
         } else {
           sound.playRungAdd();
+          let y2Ratio = yRatio;
+          if (e.shiftKey) {
+            y2Ratio = Math.min(0.92, yRatio + 0.055);
+          } else if (e.altKey) {
+            y2Ratio = Math.max(0.08, yRatio - 0.055);
+          }
+          onToggleRung(nearestGap, yRatio, y2Ratio);
         }
-        onToggleRung(nearestGap, yRatio);
       }
     }
   };
@@ -422,7 +439,16 @@ export const LadderCanvas: React.FC<LadderCanvasProps> = ({
     if (nearestGap >= 0 && nearestGap < colCount - 1) {
       const yRatio = (mouseY - padY) / (dimensions.height - padY * 2);
       if (yRatio >= 0.08 && yRatio <= 0.92) {
-        setHoverRung({ col: nearestGap, yRatio });
+        let y2Ratio = yRatio;
+        let isDiagonal = false;
+        if (e.shiftKey) {
+          y2Ratio = Math.min(0.92, yRatio + 0.055);
+          isDiagonal = true;
+        } else if (e.altKey) {
+          y2Ratio = Math.max(0.08, yRatio - 0.055);
+          isDiagonal = true;
+        }
+        setHoverRung({ col: nearestGap, yRatio, y2Ratio, isDiagonal });
         return;
       }
     }
@@ -441,12 +467,20 @@ export const LadderCanvas: React.FC<LadderCanvasProps> = ({
         className="w-full max-w-5xl bg-white/95 border border-slate-200/80 rounded-2xl shadow-sm p-4 sm:p-6 overflow-x-auto relative select-none"
       >
         {/* Top Header / Drag Guide & Quick Curtain Toggle */}
-        <div className="flex items-center justify-between mb-3 px-2 text-xs text-slate-500">
-          <span className="flex items-center gap-1.5 font-medium text-slate-600">
-            <GripHorizontal className="w-4 h-4 text-slate-400 shrink-0" />
-            <span className="hidden sm:inline">참가자 카드를 드래그하거나 화살표를 눌러 위치를 바꿀 수 있습니다</span>
-            <span className="sm:hidden">드래그하여 참가자 위치 변경</span>
-          </span>
+        <div className="flex items-center justify-between mb-3 px-2 text-xs text-slate-500 gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="flex items-center gap-1.5 font-medium text-slate-600">
+              <GripHorizontal className="w-4 h-4 text-slate-400 shrink-0" />
+              <span className="hidden sm:inline">참가자 카드를 드래그하여 순서 변경 (Shift+클릭 시 사선 다리 생성)</span>
+              <span className="sm:hidden">드래그하여 참가자 위치 변경</span>
+            </span>
+            {density === 'complex' && (
+              <span className="hidden md:inline-flex items-center gap-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md shadow-2xs">
+                <span className="inline-block w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                <span>보라색 선: 사선·X자 사다리</span>
+              </span>
+            )}
+          </div>
 
           <button
             onClick={() => {
@@ -724,11 +758,13 @@ export const LadderCanvas: React.FC<LadderCanvasProps> = ({
               );
             })}
 
-            {/* Horizontal Rungs (Bridges) */}
+            {/* Rungs (Bridges - both horizontal and diagonal) */}
             {rungs.map((rung) => {
               const x1 = getColX(rung.col);
               const x2 = getColX(rung.col + 1);
-              const y = getYPos(rung.yRatio);
+              const y1 = getYPos(rung.yRatio);
+              const y2 = getYPos(rung.y2Ratio ?? rung.yRatio);
+              const isDiagonal = Math.abs(y1 - y2) > 3;
 
               return (
                 <g
@@ -737,32 +773,66 @@ export const LadderCanvas: React.FC<LadderCanvasProps> = ({
                   onClick={(e) => {
                     e.stopPropagation();
                     sound.playRungRemove();
-                    onToggleRung(rung.col, rung.yRatio);
+                    onToggleRung(rung.col, rung.yRatio, rung.y2Ratio);
                   }}
                 >
                   {/* Hit target for easy clicking to remove */}
                   <line
                     x1={x1}
-                    y1={y}
+                    y1={y1}
                     x2={x2}
-                    y2={y}
+                    y2={y2}
                     stroke="transparent"
-                    strokeWidth="16"
+                    strokeWidth="18"
                   />
-                  {/* Rung line */}
+                  {/* Main rung line */}
                   <line
                     x1={x1}
-                    y1={y}
+                    y1={y1}
                     x2={x2}
-                    y2={y}
-                    stroke="#475569"
-                    strokeWidth="4"
+                    y2={y2}
+                    stroke={isDiagonal ? '#6366F1' : '#475569'}
+                    strokeWidth={isDiagonal ? '4.5' : '4'}
                     strokeLinecap="round"
                     className="transition-colors group-hover/rung:stroke-rose-500"
                   />
+                  {/* If diagonal, highlight with inner shine and accent center */}
+                  {isDiagonal && (
+                    <>
+                      <line
+                        x1={x1}
+                        y1={y1}
+                        x2={x2}
+                        y2={y2}
+                        stroke="#C7D2FE"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        opacity="0.9"
+                      />
+                      <circle
+                        cx={(x1 + x2) / 2}
+                        cy={(y1 + y2) / 2}
+                        r="2.5"
+                        fill="#EEF2FF"
+                        className="group-hover/rung:fill-rose-300"
+                      />
+                    </>
+                  )}
                   {/* Decorative joints */}
-                  <circle cx={x1} cy={y} r="3" fill="#334155" />
-                  <circle cx={x2} cy={y} r="3" fill="#334155" />
+                  <circle
+                    cx={x1}
+                    cy={y1}
+                    r={isDiagonal ? 4 : 3}
+                    fill={isDiagonal ? '#4338CA' : '#334155'}
+                    className="group-hover/rung:fill-rose-500 transition-colors"
+                  />
+                  <circle
+                    cx={x2}
+                    cy={y2}
+                    r={isDiagonal ? 4 : 3}
+                    fill={isDiagonal ? '#4338CA' : '#334155'}
+                    className="group-hover/rung:fill-rose-500 transition-colors"
+                  />
                 </g>
               );
             })}
@@ -774,14 +844,24 @@ export const LadderCanvas: React.FC<LadderCanvasProps> = ({
                   x1={getColX(hoverRung.col)}
                   y1={getYPos(hoverRung.yRatio)}
                   x2={getColX(hoverRung.col + 1)}
-                  y2={getYPos(hoverRung.yRatio)}
-                  stroke="#F59E0B"
-                  strokeWidth="3"
+                  y2={getYPos(hoverRung.y2Ratio)}
+                  stroke={hoverRung.isDiagonal ? '#6366F1' : '#F59E0B'}
+                  strokeWidth="3.5"
                   strokeDasharray="4 4"
-                  opacity="0.8"
+                  opacity="0.85"
                 />
-                <circle cx={getColX(hoverRung.col)} cy={getYPos(hoverRung.yRatio)} r="3" fill="#F59E0B" />
-                <circle cx={getColX(hoverRung.col + 1)} cy={getYPos(hoverRung.yRatio)} r="3" fill="#F59E0B" />
+                <circle
+                  cx={getColX(hoverRung.col)}
+                  cy={getYPos(hoverRung.yRatio)}
+                  r="3.5"
+                  fill={hoverRung.isDiagonal ? '#6366F1' : '#F59E0B'}
+                />
+                <circle
+                  cx={getColX(hoverRung.col + 1)}
+                  cy={getYPos(hoverRung.y2Ratio)}
+                  r="3.5"
+                  fill={hoverRung.isDiagonal ? '#6366F1' : '#F59E0B'}
+                />
               </g>
             )}
 
