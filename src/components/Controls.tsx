@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, Minus, Shuffle, Sparkles } from 'lucide-react';
+import { Plus, Minus, Shuffle, Sparkles, Users, Eye, EyeOff } from 'lucide-react';
 import { LadderDensity, SpeedMode } from '../types';
 import { sound } from '../utils/audio';
 
@@ -10,8 +10,11 @@ interface ControlsProps {
   onSetDensity: (density: LadderDensity) => void;
   speed: SpeedMode;
   onSetSpeed: (speed: SpeedMode) => void;
+  onShufflePlayers: () => void;
   onShuffleResults: () => void;
   onRegenerateLadder: () => void;
+  isLadderHidden: boolean;
+  onToggleLadderCurtain: () => void;
   isAnyTraveling: boolean;
 }
 
@@ -22,8 +25,11 @@ export const Controls: React.FC<ControlsProps> = ({
   onSetDensity,
   speed,
   onSetSpeed,
+  onShufflePlayers,
   onShuffleResults,
   onRegenerateLadder,
+  isLadderHidden,
+  onToggleLadderCurtain,
   isAnyTraveling,
 }) => {
   const minPlayers = 2;
@@ -38,8 +44,8 @@ export const Controls: React.FC<ControlsProps> = ({
   };
 
   return (
-    <div className="w-full max-w-5xl bg-white/85 border border-slate-200/80 rounded-2xl shadow-xs p-4 sm:p-5 mb-5 select-none">
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+    <div className="w-full max-w-5xl bg-white/90 border border-slate-200/80 rounded-2xl shadow-xs p-4 sm:p-5 mb-4 select-none">
+      <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
         {/* 참가 인원수 조절 (최소 2인 이상) */}
         <div className="flex items-center gap-3">
           <span className="text-xs font-bold text-slate-700 whitespace-nowrap">
@@ -77,13 +83,13 @@ export const Controls: React.FC<ControlsProps> = ({
               <Plus className="w-4 h-4" />
             </button>
           </div>
-          <span className="text-[11px] text-slate-400 font-mono hidden md:inline">
-            (최소 {minPlayers}명 ~ 최대 {maxPlayers}명)
+          <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">
+            ({minPlayers} ~ {maxPlayers}명)
           </span>
         </div>
 
         {/* 사다리 밀도 & 이동 속도 조절 */}
-        <div className="flex items-center gap-4 flex-wrap justify-center sm:justify-end">
+        <div className="flex items-center gap-3 sm:gap-4 flex-wrap justify-center lg:justify-end">
           {/* 사다리 밀도 */}
           <div className="flex items-center gap-1.5">
             <span className="text-xs font-semibold text-slate-600">선 개수</span>
@@ -131,8 +137,23 @@ export const Controls: React.FC<ControlsProps> = ({
             </div>
           </div>
 
-          {/* 결과 섞기 & 사다리 새로짜기 */}
-          <div className="flex items-center gap-2">
+          {/* 참가자 섞기, 결과 섞기, 새로짜기, 커튼 토글 */}
+          <div className="flex items-center gap-2 flex-wrap justify-center">
+            {/* 참가자 섞기 */}
+            <button
+              onClick={() => {
+                sound.playShuffle();
+                onShufflePlayers();
+              }}
+              disabled={isAnyTraveling}
+              title="참가자의 배치 순서를 무작위로 섞습니다"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 hover:text-blue-700 bg-slate-100 hover:bg-blue-50 border border-slate-200 rounded-lg transition-colors active:scale-95"
+            >
+              <Users className="w-3.5 h-3.5 text-blue-600" />
+              <span>참가자 섞기</span>
+            </button>
+
+            {/* 결과 섞기 */}
             <button
               onClick={() => {
                 sound.playShuffle();
@@ -142,10 +163,11 @@ export const Controls: React.FC<ControlsProps> = ({
               title="하단 결과 위치를 무작위로 섞습니다"
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 hover:text-amber-700 bg-slate-100 hover:bg-amber-50 border border-slate-200 rounded-lg transition-colors active:scale-95"
             >
-              <Shuffle className="w-3.5 h-3.5" />
+              <Shuffle className="w-3.5 h-3.5 text-amber-600" />
               <span>결과 섞기</span>
             </button>
 
+            {/* 사다리 새로짜기 */}
             <button
               onClick={() => {
                 sound.playShuffle();
@@ -156,7 +178,33 @@ export const Controls: React.FC<ControlsProps> = ({
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors active:scale-95"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-              <span>사다리 새로짜기</span>
+              <span>새로짜기</span>
+            </button>
+
+            {/* 사다리 가리기 / 커튼 토글 버튼 */}
+            <button
+              onClick={() => {
+                sound.playCurtain(!isLadderHidden);
+                onToggleLadderCurtain();
+              }}
+              title={isLadderHidden ? '커튼을 열어 사다리를 확인합니다' : '커튼을 쳐서 사다리 경로를 가립니다'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all active:scale-95 ${
+                isLadderHidden
+                  ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-700 shadow-xs animate-pulse'
+                  : 'bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-700 border-slate-200'
+              }`}
+            >
+              {isLadderHidden ? (
+                <>
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>사다리 열기</span>
+                </>
+              ) : (
+                <>
+                  <EyeOff className="w-3.5 h-3.5 text-rose-500" />
+                  <span>사다리 가리기</span>
+                </>
+              )}
             </button>
           </div>
         </div>

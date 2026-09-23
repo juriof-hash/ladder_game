@@ -427,6 +427,75 @@ class SoundEngine {
   }
 
   /**
+   * Theatre curtain drawing / slide sound
+   */
+  public playCurtain(opening: boolean) {
+    if (this.isMuted) return;
+    try {
+      this.initCtx();
+      if (!this.ctx || !this.masterGain) return;
+      const now = this.ctx.currentTime;
+
+      // Filtered noise sweep for realistic velvet fabric rustle
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      const filter = this.ctx.createBiquadFilter();
+
+      filter.type = 'bandpass';
+      filter.Q.setValueAtTime(2, now);
+
+      osc.type = 'sawtooth';
+      if (opening) {
+        // Dramatic reveal sweep: 300 -> 900 Hz
+        osc.frequency.setValueAtTime(280, now);
+        osc.frequency.exponentialRampToValueAtTime(840, now + 0.35);
+        filter.frequency.setValueAtTime(450, now);
+        filter.frequency.exponentialRampToValueAtTime(1400, now + 0.35);
+      } else {
+        // Dramatic curtain drop / close sweep: 800 -> 240 Hz
+        osc.frequency.setValueAtTime(750, now);
+        osc.frequency.exponentialRampToValueAtTime(220, now + 0.35);
+        filter.frequency.setValueAtTime(1200, now);
+        filter.frequency.exponentialRampToValueAtTime(350, now + 0.35);
+      }
+
+      gain.gain.setValueAtTime(0.01, now);
+      gain.gain.linearRampToValueAtTime(0.18, now + 0.1);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.masterGain);
+
+      osc.start(now);
+      osc.stop(now + 0.38);
+
+      // Chime sparkle if opening
+      if (opening) {
+        [659.25, 880, 1318.51].forEach((freq, i) => {
+          if (!this.ctx || !this.masterGain) return;
+          const chime = this.ctx.createOscillator();
+          const cGain = this.ctx.createGain();
+          const t = now + 0.15 + i * 0.06;
+
+          chime.type = 'sine';
+          chime.frequency.setValueAtTime(freq, t);
+
+          cGain.gain.setValueAtTime(0.12, t);
+          cGain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+
+          chime.connect(cGain);
+          cGain.connect(this.masterGain);
+          chime.start(t);
+          chime.stop(t + 0.3);
+        });
+      }
+    } catch {
+      // Audio fallback
+    }
+  }
+
+  /**
    * Dynamic playing-card / dice ruffle shuffle sound
    */
   public playShuffle() {

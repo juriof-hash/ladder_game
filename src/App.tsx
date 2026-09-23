@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
+import { Zap } from 'lucide-react';
 import { Player, LadderResult, LadderRung, LadderDensity, SpeedMode } from './types';
 import { generateLadderRungs } from './utils/ladder';
 import {
@@ -44,8 +45,11 @@ export default function App() {
 
   // Animation triggers & active selection
   const [isAllTraveling, setIsAllTraveling] = useState(false);
+  const [isRemainingTraveling, setIsRemainingTraveling] = useState(false);
+  const [isAnyRunning, setIsAnyRunning] = useState(false);
   const [activePathPlayerId, setActivePathPlayerId] = useState<string | null>(null);
   const [isResultModalOpen, setIsResultModalOpen] = useState(false);
+  const [isLadderHidden, setIsLadderHidden] = useState(false);
 
   // Check if any player has finished or all finished
   const allFinished = useMemo(() => {
@@ -55,6 +59,13 @@ export default function App() {
   const finishedCount = useMemo(() => {
     return players.filter((p) => p.hasFinished).length;
   }, [players]);
+
+  // Remaining un-finished players
+  const remainingPlayers = useMemo(() => {
+    return players.filter((p) => !p.hasFinished);
+  }, [players]);
+
+  const remainingCount = remainingPlayers.length;
 
   // Handle Player Count change (Min 2 to Max 12)
   const handleUpdatePlayerCount = useCallback(
@@ -241,11 +252,65 @@ export default function App() {
     setTimeout(() => setIsAllTraveling(false), 200);
   }, []);
 
+  // Start only remaining un-finished players
+  const handleStartRemaining = useCallback(() => {
+    if (remainingCount === 0 || isAnyRunning) return;
+    setIsRemainingTraveling(true);
+    setTimeout(() => setIsRemainingTraveling(false), 200);
+  }, [remainingCount, isAnyRunning]);
+
+  // Toggle ladder curtain
+  const handleToggleLadderCurtain = useCallback(() => {
+    setIsLadderHidden((prev) => !prev);
+  }, []);
+
+  // Shuffle participant positions
+  const handleShufflePlayers = useCallback(() => {
+    setPlayers((prev) => {
+      const shuffled = [...prev];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      return shuffled.map((p) => ({
+        ...p,
+        hasFinished: false,
+        resultId: undefined,
+      }));
+    });
+    setResults((prev) => prev.map((r) => ({ ...r, isRevealed: false })));
+    setIsAllTraveling(false);
+    setIsRemainingTraveling(false);
+    setActivePathPlayerId(null);
+  }, []);
+
+  // Drag & drop or arrow reordering of participants
+  const handleReorderPlayers = useCallback((sourceIndex: number, targetIndex: number) => {
+    if (sourceIndex === targetIndex) return;
+    sound.playClick();
+    setPlayers((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(sourceIndex, 1);
+      next.splice(targetIndex, 0, moved);
+      return next.map((p) => ({
+        ...p,
+        hasFinished: false,
+        resultId: undefined,
+      }));
+    });
+    setResults((prev) => prev.map((r) => ({ ...r, isRevealed: false })));
+    setIsAllTraveling(false);
+    setIsRemainingTraveling(false);
+    setActivePathPlayerId(null);
+  }, []);
+
   // Reset entire game
   const handleResetGame = useCallback(() => {
     sound.playShuffle();
     handleRegenerateLadder();
   }, [handleRegenerateLadder]);
+
+  const isBusyTraveling = isAllTraveling || isRemainingTraveling || isAnyRunning;
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-100/60 text-slate-800">
@@ -255,8 +320,11 @@ export default function App() {
         onToggleMute={handleToggleMute}
         onResetGame={handleResetGame}
         onStartAll={handleStartAll}
+        onStartRemaining={handleStartRemaining}
+        remainingCount={remainingCount}
+        totalCount={playerCount}
         onShowResults={() => setIsResultModalOpen(true)}
-        isAnyTraveling={isAllTraveling}
+        isAnyTraveling={isBusyTraveling}
         allFinished={allFinished}
       />
 
@@ -278,9 +346,46 @@ export default function App() {
             )}
           </div>
           <div className="flex items-center gap-2 text-[11px] text-slate-400">
-            <span>참가자 이름이나 하단 결과를 클릭하여 변경할 수 있습니다</span>
+            <span>참가자를 드래그하여 자리를 바꾸거나, 사다리를 커튼으로 가릴 수 있습니다</span>
           </div>
         </div>
+
+        {/* Dynamic Remaining Players Quick Action Banner */}
+        {remainingCount >= 2 && remainingCount < playerCount && (
+          <div className="w-full max-w-5xl mb-4 bg-gradient-to-r from-amber-500/10 via-amber-500/15 to-orange-500/10 border border-amber-300/80 rounded-2xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-center gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white font-black text-sm shadow-xs animate-bounce">
+                <Zap className="w-5 h-5 fill-white" />
+              </span>
+              <div>
+                <div className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
+                  <span>
+                    마지막 <strong className="text-amber-700 font-black text-sm sm:text-base">{remainingCount}명</strong> 남았습니다!
+                  </span>
+                  <span className="text-[11px] font-normal text-slate-500">
+                    ({remainingPlayers.map((p) => p.name).join(', ')})
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-600 mt-0.5">
+                  남은 참가자들을 한 번에 출발시켜 긴장감 넘치는 결말을 확인해보세요.
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={handleStartRemaining}
+              disabled={isBusyTraveling}
+              className={`flex items-center gap-2 px-4 py-2 text-xs sm:text-sm font-bold rounded-xl transition-all shadow-sm active:scale-95 whitespace-nowrap ${
+                isBusyTraveling
+                  ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                  : 'bg-amber-600 hover:bg-amber-700 text-white ring-2 ring-amber-400/50 shadow-amber-600/25'
+              }`}
+            >
+              <Zap className="w-4 h-4 fill-white" />
+              <span>마지막 {remainingCount}명 동시 출발</span>
+            </button>
+          </div>
+        )}
 
         {/* Controls Card */}
         <Controls
@@ -290,9 +395,12 @@ export default function App() {
           onSetDensity={handleSetDensity}
           speed={speed}
           onSetSpeed={setSpeed}
+          onShufflePlayers={handleShufflePlayers}
           onShuffleResults={handleShuffleResults}
           onRegenerateLadder={handleRegenerateLadder}
-          isAnyTraveling={isAllTraveling}
+          isLadderHidden={isLadderHidden}
+          onToggleLadderCurtain={handleToggleLadderCurtain}
+          isAnyTraveling={isBusyTraveling}
         />
 
         {/* Interactive Ladder Canvas */}
@@ -308,6 +416,12 @@ export default function App() {
           activePathPlayerId={activePathPlayerId}
           setActivePathPlayerId={setActivePathPlayerId}
           isAllTraveling={isAllTraveling}
+          isRemainingTraveling={isRemainingTraveling}
+          onTravelingChange={setIsAnyRunning}
+          remainingCount={remainingCount}
+          onReorderPlayers={handleReorderPlayers}
+          isLadderHidden={isLadderHidden}
+          onToggleLadderCurtain={handleToggleLadderCurtain}
         />
       </main>
 
