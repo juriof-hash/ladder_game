@@ -1,0 +1,6 @@
+{
+  "name": "사다리타기 게임",
+  "description": "최소 2인부터 즐기는 실시간 인터랙티브 사다리타기 게임입니다. 상단 이름과 하단 결과를 자유롭게 수정하고, 사운드 효과와 함께 생생한 경로 애니메이션을 확인하세요.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
